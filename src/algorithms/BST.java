@@ -122,59 +122,57 @@ public class BST implements BSTInterface {
                 }
                 
                 // -------- Case 2 children --------
-                // Find successor (leftmost node in right subtree)
                 Node succPred = curr;
                 Node succ = curr.right;
-                
-                while (succ.left != null) {
-                    succPred = succ;
-                    succ = succ.left;
-                }
-                
-                // Lock successor path (prevent deadlock with consistent ordering)
-                if (succPred != curr) {
-                    succPred.lock.lock();
-                }
-                succ.lock.lock();
-                
+
+                // Acquire initial lock on the right child
+                succ.lock.lock(); 
                 try {
-                    // Validate successor is still in correct position
-                    if ((succPred == curr && curr.right != succ) || 
-                        (succPred != curr && succPred.left != succ)) {
-                        continue; // Retry if successor moved
+                    // 1. Hand-over-hand descent to the leftmost node
+                    while (succ.left != null) {
+                        Node nextSucc = succ.left;
+                        nextSucc.lock.lock(); // Lock the child before releasing the parent
+                        
+                        // Release previous ancestor only if it's not the target node (curr)
+                        if (succPred != curr) {
+                            succPred.lock.unlock();
+                        }
+                        
+                        succPred = succ;
+                        succ = nextSucc;
                     }
-                    
-                    // Store current's children before modification
-                    Node currLeft = curr.left;
-                    Node currRight = curr.right;
-                    
-                    // 1. Remove successor from its current position
-                    Node succRightChild = succ.right;
+
+                    // 2. THE CRITICAL VALIDATION STEP
+                    // We must ensure 'succ' is still linked correctly to 'succPred' 
+                    // and hasn't been logically deleted by another thread.
+                    if (succ.marked || succPred.marked || 
+                    (succPred == curr ? curr.right != succ : succPred.left != succ)) {
+                        // If validation fails, something changed. Unlock and retry the whole removal.
+                        if (succPred != curr) succPred.lock.unlock();
+                        continue; 
+                    }
+
+                    // 3. LOGICAL DELETION (The Linearization Point)
+                    // We mark the successor as the node being "removed" from the physical structure
+                    succ.marked = true;
+
+                    // 4. THE KEY SWAP
+                    // Instead of moving the Node object, we move the data.
+                    // This prevents concurrent 'contains' or 'find' threads from getting lost.
+                    curr.key = succ.key;
+
+                    // 5. PHYSICAL UNLINKING
+                    // Connect the successor's right subtree to its parent.
                     if (succPred == curr) {
-                        // Successor is direct right child
-                        curr.right = succRightChild;
+                        curr.right = succ.right;
                     } else {
-                        // Successor is deeper in left subtree of right child
-                        succPred.left = succRightChild;
+                        succPred.left = succ.right;
                     }
-                    
-                    // 2. Replace curr with successor
-                    succ.left = currLeft;
-                    succ.right = (succPred == curr) ? succRightChild : currRight;
-                    
-                    // 3. Update parent pointer to successor
-                    if (key < pred.key) {
-                        pred.left = succ;
-                    } else {
-                        pred.right = succ;
-                    }
-                    
-                    // Clear successor's marked flag (it's now the replacement)
-                    succ.marked = false;
-                    
-                    return true; // LINEARIZATION POINT
-                    
+
+                    return true; // Success!
+
                 } finally {
+                    // Cleanup locks
                     succ.lock.unlock();
                     if (succPred != curr) {
                         succPred.lock.unlock();
