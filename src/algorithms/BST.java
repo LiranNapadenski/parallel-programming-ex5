@@ -122,22 +122,20 @@ public class BST implements BSTInterface {
                 succ.lock.lock();
 
                 try {
-                    // Validate successor chain
-                    if (succPred.marked || succ.marked) return true;
-                    if (succPred.left != succ && succPred.right != succ) return true;
+                    // Validate successor hasn't changed/been marked
+                    if (succPred.marked || succ.marked || 
+                    (succPred == curr ? curr.right != succ : succPred.left != succ)) {
+                        // Validation failed - restart
+                        continue retry; 
+                    }
 
-                    // Unlink successor from old location
-                    Node succChild = succ.right;
-                    if (succPred.left == succ) succPred.left = succChild;
-                    else succPred.right = succChild;
+                    // Move the key, not the node
+                    curr.key = succ.key; 
+                    succ.marked = true; // Logically delete successor node
 
-                    // Move successor into curr's position
-                    succ.left = curr.left;
-                    succ.right = curr.right;
-                    succ.marked = false;
-
-                    if (key < pred.key) pred.left = succ;
-                    else pred.right = succ;
+                    // Physically unlink successor
+                    if (succPred.left == succ) succPred.left = succ.right;
+                    else succPred.right = succ.right;
 
                     return true;
 
