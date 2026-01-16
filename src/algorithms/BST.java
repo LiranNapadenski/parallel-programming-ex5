@@ -98,11 +98,12 @@ public class BST implements BSTInterface {
                 if (!validate(pred, curr, key)) continue;
                 if (curr.marked) return false;
 
-                // LINEARIZATION POINT
-                curr.marked = true;
+                
 
                 // Case 0 or 1 child
                 if (curr.left == null || curr.right == null) {
+                    // LINEARIZATION POINT
+                    curr.marked = true;
                     Node child = (curr.left != null) ? curr.left : curr.right;
                     if (key < pred.key) pred.left = child;
                     else pred.right = child;
