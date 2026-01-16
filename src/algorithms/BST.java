@@ -60,7 +60,6 @@ public class BST implements BSTInterface {
     @Override
     public final boolean insert(final int key) {
         while (true) {
-            System.out.println("Attempting to insert key: " + key);
             Node[] nodes = find(key);
             Node curr = nodes[0];
             Node pred = nodes[1];
@@ -89,7 +88,6 @@ public class BST implements BSTInterface {
     @Override
     public final boolean remove(final int key) {
         while (true) {
-            System.out.println("Attempting to remove key: " + key);
             Node[] nodes = find(key);
             Node curr = nodes[0];
             Node pred = nodes[1];
