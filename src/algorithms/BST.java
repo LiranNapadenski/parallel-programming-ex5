@@ -95,24 +95,24 @@ public class BST implements BSTInterface {
             pred.lock.lock();
             curr.lock.lock();
             try {
-                if (!validate(pred, curr, key)) continue;
+                if (!validate(pred, curr, key)) continue retry;
                 if (curr.marked) return false;
-
-                
 
                 // Case 0 or 1 child
                 if (curr.left == null || curr.right == null) {
-                    // LINEARIZATION POINT
-                    curr.marked = true;
+                    curr.marked = true; // Linearization Point
                     Node child = (curr.left != null) ? curr.left : curr.right;
                     if (key < pred.key) pred.left = child;
                     else pred.right = child;
                     return true;
                 }
 
-                // Case 2 children
+                // Case 2 children: Successor Key Swap
                 Node succPred = curr;
                 Node succ = curr.right;
+                
+                // Safety check: if curr.right was removed by another thread before locking
+                if (succ == null) continue retry; 
 
                 while (succ.left != null) {
                     succPred = succ;
@@ -121,30 +121,26 @@ public class BST implements BSTInterface {
 
                 if (succPred != curr) succPred.lock.lock();
                 succ.lock.lock();
-
                 try {
-                    // Validate successor hasn't changed/been marked
-                    if (succPred.marked || succ.marked || 
-                    (succPred == curr ? curr.right != succ : succPred.left != succ)) {
-                        // Validation failed - restart
+                    // Validate the successor path is still connected and unmarked
+                    boolean validSucc = (succPred == curr) ? (curr.right == succ) : (succPred.left == succ);
+                    if (succPred.marked || succ.marked || !validSucc) {
                         continue retry; 
                     }
 
-                    // Move the key, not the node
+                    // Copy key from successor to current node
                     curr.key = succ.key; 
-                    succ.marked = true; // Logically delete successor node
+                    succ.marked = true; // Linearization Point for Case 2
 
-                    // Physically unlink successor
+                    // Physically unlink successor node
                     if (succPred.left == succ) succPred.left = succ.right;
                     else succPred.right = succ.right;
 
                     return true;
-
                 } finally {
                     succ.lock.unlock();
                     if (succPred != curr) succPred.lock.unlock();
                 }
-
             } finally {
                 curr.lock.unlock();
                 pred.lock.unlock();
