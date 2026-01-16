@@ -60,6 +60,7 @@ public class BST implements BSTInterface {
     @Override
     public final boolean insert(final int key) {
         while (true) {
+            System.out.println("Attempting to insert key: " + key);
             Node[] nodes = find(key);
             Node curr = nodes[0];
             Node pred = nodes[1];
@@ -88,75 +89,108 @@ public class BST implements BSTInterface {
     @Override
     public final boolean remove(final int key) {
         while (true) {
+            System.out.println("Attempting to remove key: " + key);
             Node[] nodes = find(key);
             Node curr = nodes[0];
             Node pred = nodes[1];
-
-            if (curr == null) return false;
-
+            
+            if (curr == null) return false; // Key not found
+            
             // Lock parent → current
             pred.lock.lock();
             curr.lock.lock();
+            
             try {
-                if (!validate(pred, curr, key)) continue;
-
+                // Validate the path is still valid
+                if (!validate(pred, curr, key)) {
+                    continue; // Retry if path changed
+                }
+                
+                // Mark node as logically deleted first
+                curr.marked = true; // LINEARIZATION POINT
+                
                 // -------- Case 0 or 1 child --------
                 if (curr.left == null || curr.right == null) {
                     Node child = (curr.left != null) ? curr.left : curr.right;
-
-                    if (key < pred.key) pred.left = child;
-                    else pred.right = child;
-
-                    return true; // LINEARIZATION POINT
+                    
+                    // Physical removal
+                    if (key < pred.key) {
+                        pred.left = child;
+                    } else {
+                        pred.right = child;
+                    }
+                    
+                    return true; 
                 }
-
+                
                 // -------- Case 2 children --------
-                // Find successor (leftmost of right subtree)
+                // Find successor (leftmost node in right subtree)
                 Node succPred = curr;
                 Node succ = curr.right;
-
+                
                 while (succ.left != null) {
                     succPred = succ;
                     succ = succ.left;
                 }
-
-                // Lock successor path (top-down, no deadlock)
-                if (succPred != curr) succPred.lock.lock();
+                
+                // Lock successor path (prevent deadlock with consistent ordering)
+                if (succPred != curr) {
+                    succPred.lock.lock();
+                }
                 succ.lock.lock();
+                
                 try {
-                    // Validate successor still connected
-                    if ((succPred == curr && curr.right != succ) ||
+                    // Validate successor is still in correct position
+                    if ((succPred == curr && curr.right != succ) || 
                         (succPred != curr && succPred.left != succ)) {
-                        continue;
+                        continue; // Retry if successor moved
                     }
-
-                    // 1. Detach successor from its old position
-                    Node succChild = succ.right;
+                    
+                    // Store current's children before modification
+                    Node currLeft = curr.left;
+                    Node currRight = curr.right;
+                    
+                    // 1. Remove successor from its current position
+                    Node succRightChild = succ.right;
                     if (succPred == curr) {
-                        curr.right = succChild;
+                        // Successor is direct right child
+                        curr.right = succRightChild;
                     } else {
-                        succPred.left = succChild;
+                        // Successor is deeper in left subtree of right child
+                        succPred.left = succRightChild;
                     }
-
-                    // 2. Move successor into curr's position
-                    succ.left = curr.left;
-                    succ.right = curr.right;
-
-                    if (key < pred.key) pred.left = succ;
-                    else pred.right = succ;
-
+                    
+                    // 2. Replace curr with successor
+                    succ.left = currLeft;
+                    succ.right = (succPred == curr) ? succRightChild : currRight;
+                    
+                    // 3. Update parent pointer to successor
+                    if (key < pred.key) {
+                        pred.left = succ;
+                    } else {
+                        pred.right = succ;
+                    }
+                    
+                    // Clear successor's marked flag (it's now the replacement)
+                    succ.marked = false;
+                    
                     return true; // LINEARIZATION POINT
+                    
                 } finally {
                     succ.lock.unlock();
-                    if (succPred != curr) succPred.lock.unlock();
+                    if (succPred != curr) {
+                        succPred.lock.unlock();
+                    }
                 }
-
+                
             } finally {
                 curr.lock.unlock();
                 pred.lock.unlock();
             }
         }
     }
+
+
 
 
 
