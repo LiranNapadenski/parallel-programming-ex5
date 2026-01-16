@@ -50,12 +50,14 @@ public class BST implements BSTInterface {
     }
 }
 
+    @Override
     public final boolean contains(final int key) {
         Node[] nodes = find(key);
         Node curr = nodes[0];
         return curr != null && curr.key == key && !curr.marked;
     }
 
+    @Override
     public final boolean insert(final int key) {
         while (true) {
             Node[] nodes = find(key);
@@ -83,8 +85,8 @@ public class BST implements BSTInterface {
         }
     }
 
+    @Override
     public final boolean remove(final int key) {
-        retry:
         while (true) {
             Node[] nodes = find(key);
             Node curr = nodes[0];
@@ -92,55 +94,63 @@ public class BST implements BSTInterface {
 
             if (curr == null) return false;
 
+            // Lock parent → current
             pred.lock.lock();
             curr.lock.lock();
             try {
-                if (!validate(pred, curr, key)) continue retry;
-                if (curr.marked) return false;
+                if (!validate(pred, curr, key)) continue;
 
-                // Case 0 or 1 child
+                // -------- Case 0 or 1 child --------
                 if (curr.left == null || curr.right == null) {
-                    curr.marked = true; // Linearization Point
                     Node child = (curr.left != null) ? curr.left : curr.right;
+
                     if (key < pred.key) pred.left = child;
                     else pred.right = child;
-                    return true;
+
+                    return true; // LINEARIZATION POINT
                 }
 
-                // Case 2 children: Successor Key Swap
+                // -------- Case 2 children --------
+                // Find successor (leftmost of right subtree)
                 Node succPred = curr;
                 Node succ = curr.right;
-                
-                // Safety check: if curr.right was removed by another thread before locking
-                if (succ == null) continue retry; 
 
                 while (succ.left != null) {
                     succPred = succ;
                     succ = succ.left;
                 }
 
+                // Lock successor path (top-down, no deadlock)
                 if (succPred != curr) succPred.lock.lock();
                 succ.lock.lock();
                 try {
-                    // Validate the successor path is still connected and unmarked
-                    boolean validSucc = (succPred == curr) ? (curr.right == succ) : (succPred.left == succ);
-                    if (succPred.marked || succ.marked || !validSucc) {
-                        continue retry; 
+                    // Validate successor still connected
+                    if ((succPred == curr && curr.right != succ) ||
+                        (succPred != curr && succPred.left != succ)) {
+                        continue;
                     }
 
-                    // Copy key from successor to current node
-                    curr.key = succ.key; 
-                    succ.marked = true; // Linearization Point for Case 2
+                    // 1. Detach successor from its old position
+                    Node succChild = succ.right;
+                    if (succPred == curr) {
+                        curr.right = succChild;
+                    } else {
+                        succPred.left = succChild;
+                    }
 
-                    // Physically unlink successor node
-                    if (succPred.left == succ) succPred.left = succ.right;
-                    else succPred.right = succ.right;
+                    // 2. Move successor into curr's position
+                    succ.left = curr.left;
+                    succ.right = curr.right;
 
-                    return true;
+                    if (key < pred.key) pred.left = succ;
+                    else pred.right = succ;
+
+                    return true; // LINEARIZATION POINT
                 } finally {
                     succ.lock.unlock();
                     if (succPred != curr) succPred.lock.unlock();
                 }
+
             } finally {
                 curr.lock.unlock();
                 pred.lock.unlock();
@@ -149,17 +159,20 @@ public class BST implements BSTInterface {
     }
 
 
+
     // Return your ID #
+    @Override
     public String getName() {
         return "328456645";
     }
 
     // Returns size of the tree.
+    @Override
     public final int size() {
     // NOTE: Guaranteed to be called without concurrent operations,
 	// so need to be thread-safe.  The method will only be called
 	// once the benchmark completes.
-        return countNodes(sentinel) - 1;
+        return countNodes(sentinel.left);
     }
 
     private int countNodes(Node node) {
@@ -173,6 +186,7 @@ public class BST implements BSTInterface {
     }
 
     // Returns the sum of keys in the tree
+    @Override
     public final long getKeysum() {
     // NOTE: Guaranteed to be called without concurrent operations,
 	// so no need to be thread-safe.
