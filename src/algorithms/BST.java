@@ -8,9 +8,9 @@ public class BST implements BSTInterface {
 
     class Node{
         
-        Node left;
-        Node right;
-        int key;
+        volatile Node left;
+        volatile Node right;
+        volatile int key;
         volatile boolean marked;
         final ReentrantLock lock;
 
