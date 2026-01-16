@@ -123,8 +123,8 @@ public class BST implements BSTInterface {
 
                 try {
                     // Validate successor chain
-                    if (succPred.marked || succ.marked) continue retry;
-                    if (succPred.left != succ && succPred.right != succ) continue retry;
+                    if (succPred.marked || succ.marked) return true;
+                    if (succPred.left != succ && succPred.right != succ) return true;
 
                     // Unlink successor from old location
                     Node succChild = succ.right;
@@ -164,7 +164,7 @@ public class BST implements BSTInterface {
     // NOTE: Guaranteed to be called without concurrent operations,
 	// so need to be thread-safe.  The method will only be called
 	// once the benchmark completes.
-        return countNodes(sentinel);
+        return countNodes(sentinel) - 1;
     }
 
     private int countNodes(Node node) {
