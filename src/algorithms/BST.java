@@ -92,68 +92,64 @@ public class BST implements BSTInterface {
             Node curr = nodes[0];
             Node pred = nodes[1];
 
-            // 1. If the key isn't in the tree, we can't remove it.
             if (curr == null) return false;
 
-            // 2. Lock the current and predecessor to validate the path.
             pred.lock.lock();
             curr.lock.lock();
             try {
-                if (!validate(pred, curr, key)) {
-                    continue; // Path changed, retry find()
-                }
+                if (!validate(pred, curr, key)) continue;
 
                 // -------- Case 0 or 1 child --------
                 if (curr.left == null || curr.right == null) {
-                    // LINEARIZATION POINT: Logically delete the target node
-                    curr.marked = true; 
-
+                    curr.marked = true; // LINEARIZATION POINT
                     Node child = (curr.left != null) ? curr.left : curr.right;
                     if (key < pred.key) pred.left = child;
                     else pred.right = child;
-
                     return true;
                 }
 
                 // -------- Case 2 children --------
-                // Note: We DO NOT mark 'curr' here. 
-                // We find the successor and mark IT instead.
                 Node succPred = curr;
                 Node succ = curr.right;
-
-                succ.lock.lock(); // Hand-over-hand locking starts here
+                succ.lock.lock();
                 try {
                     while (succ.left != null) {
                         Node nextSucc = succ.left;
                         nextSucc.lock.lock();
-                        
-                        // Release the old predecessor, unless it is the target node 'curr'
                         if (succPred != curr) succPred.lock.unlock();
-                        
                         succPred = succ;
                         succ = nextSucc;
                     }
 
-                    // VALIDATE: Check if the successor is still connected and not marked
+                    // Validate successor
                     if (succ.marked || (succPred == curr ? curr.right != succ : succPred.left != succ)) {
                         if (succPred != curr) succPred.lock.unlock();
-                        continue; // Something changed while descending, retry the whole remove
+                        continue;
                     }
 
-                    // STEP 1: LOGICAL DELETION (Linearization Point)
-                    // We mark the successor. Other threads calling contains(key) will now
-                    // see this mark and know the operation is complete.
-                    succ.marked = true;
+                    // 1. Mark BOTH nodes logically. 
+                    // This tells 'getKeysum' that BOTH are being restructured.
+                    curr.marked = true; 
+                    succ.marked = true; 
 
-                    // STEP 2: KEY SWAP
-                    // Move the successor's key up to the target node.
-                    curr.key = succ.key;
+                    // 2. Create a "Replacement Node" 
+                    // This node has the successor's key but stays at the current position.
+                    // This is the cleanest way to avoid duplicate keys in the sum.
+                    Node replacement = new Node(succ.key);
+                    replacement.left = curr.left;
+                    
+                    // 3. Handle successor's right subtree
+                    Node succRightChild = succ.right;
+                    if (succPred == curr) {
+                        replacement.right = succRightChild;
+                    } else {
+                        replacement.right = curr.right;
+                        succPred.left = succRightChild;
+                    }
 
-                    // STEP 3: PHYSICAL REMOVAL
-                    // The successor can only have a right child. Unlink the successor.
-                    Node child = succ.right;
-                    if (succPred == curr) curr.right = child;
-                    else succPred.left = child;
+                    // 4. Link replacement to the parent
+                    if (key < pred.key) pred.left = replacement;
+                    else pred.right = replacement;
 
                     return true;
 
@@ -161,7 +157,6 @@ public class BST implements BSTInterface {
                     succ.lock.unlock();
                     if (succPred != curr) succPred.lock.unlock();
                 }
-
             } finally {
                 curr.lock.unlock();
                 pred.lock.unlock();
