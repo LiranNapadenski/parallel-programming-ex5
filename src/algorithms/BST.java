@@ -91,94 +91,77 @@ public class BST implements BSTInterface {
             Node[] nodes = find(key);
             Node curr = nodes[0];
             Node pred = nodes[1];
-            
-            if (curr == null) return false; // Key not found
-            
-            // Lock parent → current
+
+            // 1. If the key isn't in the tree, we can't remove it.
+            if (curr == null) return false;
+
+            // 2. Lock the current and predecessor to validate the path.
             pred.lock.lock();
             curr.lock.lock();
-            
             try {
-                // Validate the path is still valid
                 if (!validate(pred, curr, key)) {
-                    continue; // Retry if path changed
+                    continue; // Path changed, retry find()
                 }
-                
-                // Mark node as logically deleted first
-                curr.marked = true; // LINEARIZATION POINT
-                
+
                 // -------- Case 0 or 1 child --------
                 if (curr.left == null || curr.right == null) {
+                    // LINEARIZATION POINT: Logically delete the target node
+                    curr.marked = true; 
+
                     Node child = (curr.left != null) ? curr.left : curr.right;
-                    
-                    // Physical removal
-                    if (key < pred.key) {
-                        pred.left = child;
-                    } else {
-                        pred.right = child;
-                    }
-                    
-                    return true; 
+                    if (key < pred.key) pred.left = child;
+                    else pred.right = child;
+
+                    return true;
                 }
-                
+
                 // -------- Case 2 children --------
+                // Note: We DO NOT mark 'curr' here. 
+                // We find the successor and mark IT instead.
                 Node succPred = curr;
                 Node succ = curr.right;
 
-                // Acquire initial lock on the right child
-                succ.lock.lock(); 
+                succ.lock.lock(); // Hand-over-hand locking starts here
                 try {
-                    // 1. Hand-over-hand descent to the leftmost node
                     while (succ.left != null) {
                         Node nextSucc = succ.left;
-                        nextSucc.lock.lock(); // Lock the child before releasing the parent
+                        nextSucc.lock.lock();
                         
-                        // Release previous ancestor only if it's not the target node (curr)
-                        if (succPred != curr) {
-                            succPred.lock.unlock();
-                        }
+                        // Release the old predecessor, unless it is the target node 'curr'
+                        if (succPred != curr) succPred.lock.unlock();
                         
                         succPred = succ;
                         succ = nextSucc;
                     }
 
-                    // 2. THE CRITICAL VALIDATION STEP
-                    // We must ensure 'succ' is still linked correctly to 'succPred' 
-                    // and hasn't been logically deleted by another thread.
-                    if (succ.marked || succPred.marked || 
-                    (succPred == curr ? curr.right != succ : succPred.left != succ)) {
-                        // If validation fails, something changed. Unlock and retry the whole removal.
+                    // VALIDATE: Check if the successor is still connected and not marked
+                    if (succ.marked || (succPred == curr ? curr.right != succ : succPred.left != succ)) {
                         if (succPred != curr) succPred.lock.unlock();
-                        continue; 
+                        continue; // Something changed while descending, retry the whole remove
                     }
 
-                    // 3. LOGICAL DELETION (The Linearization Point)
-                    // We mark the successor as the node being "removed" from the physical structure
+                    // STEP 1: LOGICAL DELETION (Linearization Point)
+                    // We mark the successor. Other threads calling contains(key) will now
+                    // see this mark and know the operation is complete.
                     succ.marked = true;
 
-                    // 4. THE KEY SWAP
-                    // Instead of moving the Node object, we move the data.
-                    // This prevents concurrent 'contains' or 'find' threads from getting lost.
+                    // STEP 2: KEY SWAP
+                    // Move the successor's key up to the target node.
                     curr.key = succ.key;
 
-                    // 5. PHYSICAL UNLINKING
-                    // Connect the successor's right subtree to its parent.
-                    if (succPred == curr) {
-                        curr.right = succ.right;
-                    } else {
-                        succPred.left = succ.right;
-                    }
+                    // STEP 3: PHYSICAL REMOVAL
+                    // The successor can only have a right child. Unlink the successor.
+                    Node child = succ.right;
+                    if (succPred == curr) curr.right = child;
+                    else succPred.left = child;
 
-                    return true; // Success!
+                    return true;
 
                 } finally {
-                    // Cleanup locks
                     succ.lock.unlock();
-                    if (succPred != curr) {
-                        succPred.lock.unlock();
-                    }
+                    if (succPred != curr) succPred.lock.unlock();
                 }
-                
+
             } finally {
                 curr.lock.unlock();
                 pred.lock.unlock();
