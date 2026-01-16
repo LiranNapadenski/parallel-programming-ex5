@@ -113,6 +113,7 @@ public class BST implements BSTInterface {
                 Node succ = curr.right;
                 succ.lock.lock();
                 try {
+                    //maybe be the problame - lock then unlocks while traversing to successor
                     while (succ.left != null) {
                         Node nextSucc = succ.left;
                         nextSucc.lock.lock();
