@@ -113,7 +113,7 @@ public class BST implements BSTInterface {
                 Node succ = curr.right;
                 succ.lock.lock();
                 try {
-                    //maybe be the problame - lock then unlocks while traversing to successor
+                    //not sure if this okey 
                     while (succ.left != null) {
                         Node nextSucc = succ.left;
                         nextSucc.lock.lock();
@@ -172,7 +172,7 @@ public class BST implements BSTInterface {
     // Return your ID #
     @Override
     public String getName() {
-        return "328456645";
+        return "328456645 208436139";
     }
 
     // Returns size of the tree.
