@@ -129,7 +129,6 @@ public class BST implements BSTInterface {
                     }
 
                     // 1. Mark BOTH nodes logically. 
-                    // This tells 'getKeysum' that BOTH are being restructured.
                     curr.marked = true; 
                     succ.marked = true; 
 
